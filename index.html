@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accurate 3D Calendar Contribution Sphere</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #0d1117;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+            cursor: grab;
+        }
+        canvas:active {
+            cursor: grabbing;
+        }
+    </style>
+</head>
+<body>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // 1. Leap Year & Calendar Day Verification
+        function isLeapYear(year) {
+            return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+        }
+
+        const currentYear = new Date().getFullYear();
+        const totalDays = isLeapYear(currentYear) ? 366 : 365;
+        console.log(`Active Year: ${currentYear} | Total Days to Map: ${totalDays}`);
+
+        // 2. Scene, Camera, and Renderer Setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 3.5;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        const globe = new THREE.Group();
+        scene.add(globe);
+
+        const radius = 1.2;
+        const gridMaterial = new THREE.LineBasicMaterial({
+            color: 0x30363d,
+            transparent: true,
+            opacity: 0.6
+        });
+
+        // 3. Draw Calendar Grid: 7 Rows (Days of week) & 53 Columns (Weeks of year)
+        // Total boxes = 53 * 7 = 371 cells (covering all 365/366 days cleanly)
+        const daysOfWeek = 7;
+        const weeksOfYear = 53;
+
+        // Horizontal circles (7 rows for days of the week)
+        for (let i = 1; i < daysOfWeek; i++) {
+            const phi = (i / daysOfWeek) * Math.PI;
+            const ringRadius = radius * Math.sin(phi);
+            const y = radius * Math.cos(phi);
+
+            const points = [];
+            for (let j = 0; j <= 64; j++) {
+                const theta = (j / 64) * Math.PI * 2;
+                points.push(new THREE.Vector3(
+                    ringRadius * Math.cos(theta),
+                    y,
+                    ringRadius * Math.sin(theta)
+                ));
+            }
+            globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMaterial));
+        }
+
+        // Vertical meridian lines (53 columns for weeks of the year)
+        for (let i = 0; i < weeksOfYear; i++) {
+            const theta = (i / weeksOfYear) * Math.PI * 2;
+            const points = [];
+            for (let j = 0; j <= 64; j++) {
+                const phi = (j / 64) * Math.PI;
+                points.push(new THREE.Vector3(
+                    radius * Math.sin(phi) * Math.cos(theta),
+                    radius * Math.cos(phi),
+                    radius * Math.sin(phi) * Math.sin(theta)
+                ));
+            }
+            globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMaterial));
+        }
+
+        // Dark inner core for depth
+        const innerGeo = new THREE.SphereGeometry(radius - 0.02, 32, 32);
+        const innerMat = new THREE.MeshBasicMaterial({ color: 0x010409 });
+        globe.add(new THREE.Mesh(innerGeo, innerMat));
+
+        // 4. Mouse & Touch Drag Interactivity
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        window.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener('mouseup', () => { isDragging = false; });
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const deltaX = e.clientX - previousMousePosition.x;
+            const deltaY = e.clientY - previousMousePosition.y;
+
+            globe.rotation.y += deltaX * 0.005;
+            globe.rotation.x += deltaY * 0.005;
+
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+        });
+        window.addEventListener('touchend', () => { isDragging = false; });
+        window.addEventListener('touchmove', (e) => {
+            if (!isDragging || e.touches.length !== 1) return;
+            const deltaX = e.touches[0].clientX - previousMousePosition.x;
+            globe.rotation.y += deltaX * 0.005;
+            previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }, { passive: true });
+
+        // 5. Animation Loop (Smooth Spin)
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            if (!isDragging) {
+                const rotationSpeed = (2 * Math.PI) / 10.0; // 10 seconds per rotation
+                globe.rotation.y += rotationSpeed * delta;
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // 6. Window Resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
