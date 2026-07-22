@@ -3,23 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live 3D GitHub Contribution Sphere</title>
+    <title>Interactive 3D GitHub Contribution Sphere</title>
     <style>
         body {
             margin: 0;
             background-color: #0d1117;
             overflow: hidden;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
-        #loader {
+        #ui-overlay {
             position: absolute;
+            top: 20px;
+            left: 20px;
             color: #c9d1d9;
-            font-size: 16px;
             pointer-events: none;
+            z-index: 10;
+        }
+        h2 { margin: 0 0 5px 0; font-size: 18px; color: #f0f6fc; }
+        p { margin: 0; font-size: 13px; color: #8b949e; }
+        
+        #tooltip {
+            position: absolute;
+            display: none;
+            background: rgba(22, 27, 34, 0.95);
+            color: #c9d1d9;
+            padding: 8px 12px;
+            border: 1px. solid #30363d;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 20;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
         canvas {
             display: block;
@@ -32,13 +46,19 @@
 </head>
 <body>
 
-    <div id="loader">Loading live contribution data for debjeetxyz...</div>
+    <div id="ui-overlay">
+        <h2>@debjeetxyz</h2>
+        <p>GitHub Joining Date Anchor: <strong>February 2024</strong></p>
+        <p id="status-text">Fetching live contributions...</p>
+    </div>
+
+    <div id="tooltip"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         const username = "debjeetxyz";
         
-        // 1. Scene, Camera, and Renderer Setup
+        // Scene, Camera, Renderer Setup
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 3.5;
@@ -52,94 +72,46 @@
         scene.add(globe);
 
         const radius = 1.2;
+        const contributionColors = [0x161b22, 0x0e4429, 0x006d32, 0x26a641, 0x39d353];
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const interactiveMeshes = [];
 
-        // GitHub contribution color map (levels 0 to 4)
-        const contributionColors = [
-            0x161b22, // Level 0: No contributions
-            0x0e4429, // Level 1: Low
-            0x006d32, // Level 2: Medium-low
-            0x26a641, // Level 3: Medium-high
-            0x39d353  // Level 4: High
-        ];
-
-        // Background structural grid lines
-        const gridMaterial = new THREE.LineBasicMaterial({
-            color: 0x30363d,
-            transparent: true,
-            opacity: 0.3
-        });
-
-        const daysOfWeek = 7;
-        const weeksOfYear = 53;
-
-        // Draw background structural grid rings
-        for (let i = 1; i < daysOfWeek; i++) {
-            const phi = (i / daysOfWeek) * Math.PI;
-            const ringRadius = radius * Math.sin(phi);
-            const y = radius * Math.cos(phi);
-            const points = [];
-            for (let j = 0; j <= 64; j++) {
-                const theta = (j / 64) * Math.PI * 2;
-                points.push(new THREE.Vector3(ringRadius * Math.cos(theta), y, ringRadius * Math.sin(theta)));
-            }
-            globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMaterial));
-        }
-
-        for (let i = 0; i < weeksOfYear; i++) {
-            const theta = (i / weeksOfYear) * Math.PI * 2;
-            const points = [];
-            for (let j = 0; j <= 64; j++) {
-                const phi = (j / 64) * Math.PI;
-                points.push(new THREE.Vector3(radius * Math.sin(phi) * Math.cos(theta), radius * Math.cos(phi), radius * Math.sin(phi) * Math.sin(theta)));
-            }
-            globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMaterial));
-        }
-
-        // Solid inner core
-        const innerGeo = new THREE.SphereGeometry(radius - 0.02, 32, 32);
-        const innerMat = new THREE.MeshBasicMaterial({ color: 0x010409 });
-        globe.add(new THREE.Mesh(innerGeo, innerMat));
-
-        // 2. Fetch Live Contribution Data and Map to Sphere Cells
+        // Fetch Live Contribution Data
         async function fetchLiveContributions() {
             try {
-                // Using the public contribution API wrapper for real-time history
                 const response = await fetch(`https://github-contributions-api.jogruber.de/v4/${username}?y=last`);
                 const data = await response.json();
                 
-                document.getElementById('loader').style.display = 'none';
+                document.getElementById('status-text').innerText = `Total Contributions (Last Year): ${data.total.lastYear}`;
                 renderContributionCells(data.contributions);
             } catch (error) {
-                console.error("Failed to fetch live contribution data:", error);
-                document.getElementById('loader').innerText = "Failed to load live data. Displaying base globe.";
+                console.error("API error:", error);
+                document.getElementById('status-text').innerText = "Loaded offline structural mode.";
             }
         }
 
         function renderContributionCells(contributions) {
-            // Map each day entry onto spherical coordinates
-            const totalDays = contributions.length;
-            
-            contributions.forEach((day, index) => {
-                const level = day.level || 0; // 0 to 4
-                const color = contributionColors[level];
+            const weeksOfYear = 53;
+            const daysOfWeek = 7;
 
-                // Calculate week (column) and day of week (row) index
+            contributions.forEach((day, index) => {
+                const level = day.level || 0;
+                const color = contributionColors[level];
                 const weekIndex = Math.floor(index / 7);
                 const dayIndex = index % 7;
 
                 if (weekIndex >= weeksOfYear) return;
 
-                // Spherical placement coordinates
                 const theta = (weekIndex / weeksOfYear) * Math.PI * 2;
                 const phi = ((dayIndex + 1) / (daysOfWeek + 1)) * Math.PI;
 
-                // Create a small box/mesh for each day cell projection
                 const boxGeo = new THREE.BoxGeometry(0.04, 0.04, 0.02);
                 const boxMat = new THREE.MeshBasicMaterial({ color: color });
                 const cell = new THREE.Mesh(boxGeo, boxMat);
 
-                // Position on surface of sphere
-                const currentRadius = radius + (level * 0.005); // Higher contributions pop out slightly!
+                const currentRadius = radius + (level * 0.005);
                 cell.position.set(
                     currentRadius * Math.sin(phi) * Math.cos(theta),
                     currentRadius * Math.cos(phi),
@@ -147,13 +119,29 @@
                 );
 
                 cell.lookAt(0, 0, 0);
+                
+                // Store date and count metadata for hover tooltips
+                cell.userData = { date: day.date, count: day.count, level: level };
+                interactiveMeshes.push(cell);
                 globe.add(cell);
             });
         }
 
         fetchLiveContributions();
 
-        // 3. Mouse & Touch Drag Interactivity
+        // Raycasting & Tooltip Interactivity for Mouse Hover
+        const tooltip = document.getElementById('tooltip');
+        let intersectedCell = null;
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            tooltip.style.left = `${e.clientX + 15}px`;
+            tooltip.style.top = `${e.clientY + 15}px`;
+        });
+
+        // Mouse Drag Logic
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
 
@@ -173,36 +161,37 @@
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
 
-        window.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                isDragging = true;
-                previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            }
-        });
-        window.addEventListener('touchend', () => { isDragging = false; });
-        window.addEventListener('touchmove', (e) => {
-            if (!isDragging || e.touches.length !== 1) return;
-            const deltaX = e.touches[0].clientX - previousMousePosition.x;
-            globe.rotation.y += deltaX * 0.005;
-            previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        }, { passive: true });
-
-        // 4. Animation Loop (Smooth Spin)
+        // Animation Loop & Hover Detection
         const clock = new THREE.Clock();
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
             if (!isDragging) {
-                const rotationSpeed = (2 * Math.PI) / 10.0; // 10 seconds per rotation
-                globe.rotation.y += rotationSpeed * delta;
+                globe.rotation.y += ((2 * Math.PI) / 10.0) * delta;
+            }
+
+            // Check hover intersection against cells
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(interactiveMeshes);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0].object;
+                if (intersectedCell !== hit) {
+                    intersectedCell = hit;
+                    tooltip.style.display = 'block';
+                    tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><strong>Contributions:</strong> ${hit.userData.count}`;
+                }
+            } else {
+                intersectedCell = null;
+                tooltip.style.display = 'none';
             }
 
             renderer.render(scene, camera);
         }
         animate();
 
-        // 5. Window Resizing
+        // Window Resizing
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
