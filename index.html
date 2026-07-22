@@ -10,6 +10,7 @@
             background-color: #0d1117;
             overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            user-select: none;
         }
         #ui-overlay {
             position: absolute;
@@ -20,7 +21,7 @@
             z-index: 10;
         }
         h2 { margin: 0 0 5px 0; font-size: 18px; color: #f0f6fc; }
-        p { margin: 0; font-size: 13px; color: #8b949e; }
+        p { margin: 0 0 4px 0; font-size: 13px; color: #8b949e; }
         
         #tooltip {
             position: absolute;
@@ -35,6 +36,57 @@
             z-index: 20;
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
+
+        /* Modal Template for Commits */
+        #commit-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            width: 360px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            color: #c9d1d9;
+            box-shadow: 0 16px 32px rgba(0,0,0,0.8);
+            display: none;
+            z-index: 100;
+            opacity: 0;
+            transition: all 0.2s ease;
+        }
+        #commit-modal.active {
+            display: block;
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        #commit-modal h3 { margin-top: 0; font-size: 15px; border-bottom: 1px solid #30363d; padding-bottom: 8px; color: #f0f6fc; }
+        .commit-item {
+            background: #0d1117;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            border: 1px solid #21262d;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .commit-item:hover {
+            border-color: #39d353;
+        }
+        .commit-item a { color: #58a6ff; text-decoration: none; font-size: 13px; font-weight: 600; display: block; margin-bottom: 2px;}
+        .commit-item p { font-size: 12px; color: #8b949e; margin: 0; }
+        
+        #close-modal {
+            float: right;
+            background: none;
+            border: none;
+            color: #8b949e;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
         canvas {
             display: block;
             cursor: grab;
@@ -48,18 +100,27 @@
 
     <div id="ui-overlay">
         <h2>@debjeetxyz</h2>
-        <p>GitHub Joining Date: <strong>July 9</strong></p>
-        <p id="status-text">Fetching live contributions from July 9...</p>
+        <p>Joining Date: <strong>July 9</strong></p>
+        <p id="live-stats">Public Repos: Loading... | Issues: Loading...</p>
+        <p id="status-text">Fetching contributions...</p>
     </div>
 
     <div id="tooltip"></div>
 
+    <!-- Interactive Commit Modal Template -->
+    <div id="commit-modal">
+        <button id="close-modal">&times;</button>
+        <h3 id="modal-date-title">Commits on Date</h3>
+        <div id="modal-commit-list"></div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         const username = "debjeetxyz";
-        const joiningMonth = 7; // July
-        const joiningDay = 9;   // 9th
+        const joiningDate = new Date("2026-07-09");
         
+        let isAutoSpinning = true;
+
         // Scene, Camera, Renderer Setup
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -80,70 +141,76 @@
         const mouse = new THREE.Vector2();
         const interactiveMeshes = [];
 
-        // Fetch Live Contribution Data and Filter from July 9
-        async function fetchLiveContributions() {
+        // Fetch User Profile Stats (Repos & Activity) & Contributions
+        async function fetchGitHubData() {
             try {
+                // Fetch public user stats
+                const userRes = await fetch(`https://api.github.com/users/${username}`);
+                const userData = await userRes.json();
+                document.getElementById('live-stats').innerHTML = `Public Repos: <strong>${userData.public_repos || 0}</strong> | Followers: <strong>${userData.followers || 0}</strong>`;
+
+                // Fetch contributions
                 const response = await fetch(`https://github-contributions-api.jogruber.de/v4/${username}?y=last`);
                 const data = await response.json();
                 
-                // Filter contributions starting from July 9 onwards
-                const filteredContributions = data.contributions.filter(day => {
+                let totalFilteredCount = 0;
+
+                data.contributions.forEach((day, index) => {
                     const dayDate = new Date(day.date);
-                    return (dayDate.getMonth() + 1 > joiningMonth) || 
-                           (dayDate.getMonth() + 1 === joiningMonth && dayDate.getDate() >= joiningDay);
+                    const isAfterJoining = dayDate >= joiningDate;
+
+                    const level = isAfterJoining ? (day.level || 0) : 0;
+                    const count = isAfterJoining ? (day.count || 0) : 0;
+                    
+                    if (isAfterJoining) totalFilteredCount += count;
+
+                    const color = contributionColors[level];
+                    const weekIndex = Math.floor(index / 7);
+                    const dayIndex = index % 7;
+
+                    if (weekIndex >= 53) return;
+
+                    const theta = (weekIndex / 53) * Math.PI * 2;
+                    const phi = ((dayIndex + 1) / 8) * Math.PI;
+
+                    const boxGeo = new THREE.BoxGeometry(0.04, 0.04, 0.02);
+                    const boxMat = new THREE.MeshBasicMaterial({ color: color });
+                    const cell = new THREE.Mesh(boxGeo, boxMat);
+
+                    const currentRadius = radius + (level * 0.005);
+                    cell.position.set(
+                        currentRadius * Math.sin(phi) * Math.cos(theta),
+                        currentRadius * Math.cos(phi),
+                        currentRadius * Math.sin(phi) * Math.sin(theta)
+                    );
+
+                    cell.lookAt(0, 0, 0);
+                    
+                    cell.userData = { 
+                        date: day.date, 
+                        count: count, 
+                        active: isAfterJoining 
+                    };
+                    
+                    interactiveMeshes.push(cell);
+                    globe.add(cell);
                 });
 
-                // Calculate total contributions specifically from July 9
-                const totalFilteredCount = filteredContributions.reduce((sum, day) => sum + day.count, 0);
-
                 document.getElementById('status-text').innerText = `Contributions since July 9: ${totalFilteredCount}`;
-                renderContributionCells(filteredContributions);
             } catch (error) {
                 console.error("API error:", error);
-                document.getElementById('status-text').innerText = "Failed to load contribution feed.";
+                document.getElementById('status-text').innerText = "Failed to load live data feed.";
             }
         }
 
-        function renderContributionCells(contributions) {
-            const weeksOfYear = 53;
-            const daysOfWeek = 7;
+        fetchGitHubData();
 
-            contributions.forEach((day, index) => {
-                const level = day.level || 0;
-                const color = contributionColors[level];
-                const weekIndex = Math.floor(index / 7);
-                const dayIndex = index % 7;
-
-                if (weekIndex >= weeksOfYear) return;
-
-                const theta = (weekIndex / weeksOfYear) * Math.PI * 2;
-                const phi = ((dayIndex + 1) / (daysOfWeek + 1)) * Math.PI;
-
-                const boxGeo = new THREE.BoxGeometry(0.04, 0.04, 0.02);
-                const boxMat = new THREE.MeshBasicMaterial({ color: color });
-                const cell = new THREE.Mesh(boxGeo, boxMat);
-
-                const currentRadius = radius + (level * 0.005);
-                cell.position.set(
-                    currentRadius * Math.sin(phi) * Math.cos(theta),
-                    currentRadius * Math.cos(phi),
-                    currentRadius * Math.sin(phi) * Math.sin(theta)
-                );
-
-                cell.lookAt(0, 0, 0);
-                
-                // Store date and count metadata for hover tooltips
-                cell.userData = { date: day.date, count: day.count, level: level };
-                interactiveMeshes.push(cell);
-                globe.add(cell);
-            });
-        }
-
-        fetchLiveContributions();
-
-        // Raycasting & Tooltip Interactivity for Mouse Hover
+        // UI Tooltip & Modal Interactivity
         const tooltip = document.getElementById('tooltip');
-        let intersectedCell = null;
+        const modal = document.getElementById('commit-modal');
+        const modalDateTitle = document.getElementById('modal-date-title');
+        const modalCommitList = document.getElementById('modal-commit-list');
+        document.getElementById('close-modal').addEventListener('click', () => modal.classList.remove('active'));
 
         window.addEventListener('mousemove', (e) => {
             mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -153,11 +220,39 @@
             tooltip.style.top = `${e.clientY + 15}px`;
         });
 
+        // Click detection: Background vs Sphere Cell
+        window.addEventListener('click', (e) => {
+            // Ignore UI clicks
+            if (e.target.closest('#ui-overlay') || e.target.closest('#commit-modal')) return;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(interactiveMeshes);
+
+            if (intersects.length > 0) {
+                // Clicked on a contribution block -> Open commit template modal
+                const hit = intersects[0].object;
+                if (hit.userData.active && hit.userData.count > 0) {
+                    modalDateTitle.innerText = `Commits on ${hit.userData.date} (${hit.userData.count})`;
+                    modalCommitList.innerHTML = `
+                        <div class="commit-item" onclick="window.open('https://github.com/${username}?tab=repositories', '_blank')">
+                            <a>View Repository Activity</a>
+                            <p>${hit.userData.count} contributions recorded on this date.</p>
+                        </div>
+                    `;
+                    modal.classList.add('active');
+                }
+            } else {
+                // Clicked on background -> Toggle spin state
+                isAutoSpinning = !isAutoSpinning;
+            }
+        });
+
         // Mouse Drag Logic
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
 
         window.addEventListener('mousedown', (e) => {
+            if (e.target.closest('#commit-modal')) return;
             isDragging = true;
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
@@ -179,23 +274,22 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
-            if (!isDragging) {
+            if (!isDragging && isAutoSpinning) {
                 globe.rotation.y += ((2 * Math.PI) / 10.0) * delta;
             }
 
-            // Check hover intersection against cells
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(interactiveMeshes);
 
-            if (intersects.length > 0) {
+            if (intersects.length > 0 && !modal.classList.contains('active')) {
                 const hit = intersects[0].object;
-                if (intersectedCell !== hit) {
-                    intersectedCell = hit;
-                    tooltip.style.display = 'block';
+                tooltip.style.display = 'block';
+                if (hit.userData.active) {
                     tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><strong>Contributions:</strong> ${hit.userData.count}`;
+                } else {
+                    tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><span style="color: #8b949e;">Before July 9</span>`;
                 }
             } else {
-                intersectedCell = null;
                 tooltip.style.display = 'none';
             }
 
