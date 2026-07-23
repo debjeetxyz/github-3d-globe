@@ -130,20 +130,20 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
 
-        // Master container tilted like Earth's axis (23.5 degrees)
-        const earthSystem = new THREE.Group();
-        earthSystem.rotation.z = THREE.MathUtils.degToRad(23.5);
-        scene.add(earthSystem);
+        // 1. Completely FIXED/STATIONARY Tilt Container for the Axis Line
+        const fixedAxisGroup = new THREE.Group();
+        fixedAxisGroup.rotation.z = THREE.MathUtils.degToRad(23.5);
+        scene.add(fixedAxisGroup);
 
-        // 1. Fixed Axis Line (Stationary relative to the tilt, piercing through poles)
+        // Stationary Axis Line (Never rotates with user drag or auto-spin)
         const axisGeo = new THREE.CylinderGeometry(0.015, 0.015, 3.2, 16);
         const axisMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.6 });
         const fixedAxis = new THREE.Mesh(axisGeo, axisMat);
-        earthSystem.add(fixedAxis);
+        fixedAxisGroup.add(fixedAxis);
 
-        // 2. Rotating Body Group (Only the sphere cells spin around the fixed axis)
+        // 2. ROTATING Sphere Body Group (Nested inside the tilted frame, spins independently around Y-axis)
         const globeBody = new THREE.Group();
-        earthSystem.add(globeBody);
+        fixedAxisGroup.add(globeBody);
 
         const radius = 1.2;
         const contributionColors = [0x161b22, 0x0e4429, 0x006d32, 0x26a641, 0x39d353];
@@ -196,7 +196,7 @@
                     cell.userData = { date: day.date, count: count, active: isAfterJoining, type: 'cell' };
                     
                     interactiveMeshes.push(cell);
-                    globeBody.add(cell); // Added to spinning body container
+                    globeBody.add(cell); // Only cells spin
                 });
 
                 document.getElementById('status-text').innerText = `Contributions since July 9: ${totalFilteredCount}`;
@@ -250,7 +250,7 @@
             }
         });
 
-        // Interactive Orbit Controls for the entire Earth System
+        // Rotate ONLY the sphere body when dragging (Axis remains perfectly fixed)
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
 
@@ -268,8 +268,9 @@
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
 
-            earthSystem.rotation.y += deltaX * 0.005;
-            earthSystem.rotation.x += deltaY * 0.005;
+            // Dragging spins the globe body around the fixed tilted axis
+            globeBody.rotation.y += deltaX * 0.005;
+            globeBody.rotation.x += deltaY * 0.005;
 
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
@@ -279,7 +280,7 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
-            // Spin ONLY the body container around its local axis smoothly
+            // Auto-spin ONLY the spiral contribution body
             if (!isDragging && isAutoSpinning) {
                 globeBody.rotation.y += ((2 * Math.PI) / 10.0) * delta;
             }
