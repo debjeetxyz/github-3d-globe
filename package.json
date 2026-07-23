@@ -1,6 +1,7 @@
 {
   "name": "cosmic-3d-github-globe",
   "version": "1.0.0",
+  "type": "module",
   "private": true,
   "dependencies": {}
 }
