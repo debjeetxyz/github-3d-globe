@@ -1,7 +1,7 @@
 body {
     margin: 0;
     /* Deep space base gradient with glowing light-blue radiant grid */
-    background-color: #201a9a;
+    background-color: #0b5bbc;
     background-image: 
         /* Central light-blue radiant glow */
         radial-gradient(circle at center, rgba(88, 166, 255, 0.15) 0%, rgba(13, 17, 23, 0.8) 60%, #03050a 100%),
