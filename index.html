@@ -130,11 +130,20 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
 
-        const globe = new THREE.Group();
-        scene.add(globe);
+        // Master container tilted like Earth's axis (23.5 degrees)
+        const earthSystem = new THREE.Group();
+        earthSystem.rotation.z = THREE.MathUtils.degToRad(23.5);
+        scene.add(earthSystem);
 
-        // Apply Earth's axial tilt (approximately 23.5 degrees)
-        globe.rotation.z = THREE.MathUtils.degToRad(23.5);
+        // 1. Fixed Axis Line (Stationary relative to the tilt, piercing through poles)
+        const axisGeo = new THREE.CylinderGeometry(0.015, 0.015, 3.2, 16);
+        const axisMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.6 });
+        const fixedAxis = new THREE.Mesh(axisGeo, axisMat);
+        earthSystem.add(fixedAxis);
+
+        // 2. Rotating Body Group (Only the sphere cells spin around the fixed axis)
+        const globeBody = new THREE.Group();
+        earthSystem.add(globeBody);
 
         const radius = 1.2;
         const contributionColors = [0x161b22, 0x0e4429, 0x006d32, 0x26a641, 0x39d353];
@@ -142,23 +151,6 @@
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         const interactiveMeshes = [];
-
-        // Pole-to-Pole Axis (Clickable for interaction and axis rotation)
-        const axisGroup = new THREE.Group();
-        const poleCapGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.5, 16);
-        const poleMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.8 });
-
-        const northAxis = new THREE.Mesh(poleCapGeo, poleMat);
-        northAxis.position.set(0, radius + 0.25, 0);
-        axisGroup.add(northAxis);
-        interactiveMeshes.push(northAxis); // Make axis clickable/hoverable
-
-        const southAxis = new THREE.Mesh(poleCapGeo, poleMat);
-        southAxis.position.set(0, -(radius + 0.25), 0);
-        axisGroup.add(southAxis);
-        interactiveMeshes.push(southAxis); // Make axis clickable/hoverable
-
-        globe.add(axisGroup);
 
         async function fetchGitHubData() {
             try {
@@ -204,7 +196,7 @@
                     cell.userData = { date: day.date, count: count, active: isAfterJoining, type: 'cell' };
                     
                     interactiveMeshes.push(cell);
-                    globe.add(cell);
+                    globeBody.add(cell); // Added to spinning body container
                 });
 
                 document.getElementById('status-text').innerText = `Contributions since July 9: ${totalFilteredCount}`;
@@ -258,7 +250,7 @@
             }
         });
 
-        // 360 Full 2D Orbit Controls (Fixed full freedom rotation for both X and Y axes)
+        // Interactive Orbit Controls for the entire Earth System
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
 
@@ -276,9 +268,8 @@
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
 
-            // Full 360-degree rotation freedom on both directions
-            globe.rotation.y += deltaX * 0.005;
-            globe.rotation.x += deltaY * 0.005;
+            earthSystem.rotation.y += deltaX * 0.005;
+            earthSystem.rotation.x += deltaY * 0.005;
 
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
@@ -288,8 +279,9 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
+            // Spin ONLY the body container around its local axis smoothly
             if (!isDragging && isAutoSpinning) {
-                globe.rotation.y += ((2 * Math.PI) / 10.0) * delta;
+                globeBody.rotation.y += ((2 * Math.PI) / 10.0) * delta;
             }
 
             raycaster.setFromCamera(mouse, camera);
@@ -298,9 +290,7 @@
             if (intersects.length > 0 && !modal.classList.contains('active')) {
                 const hit = intersects[0].object;
                 tooltip.style.display = 'block';
-                if (hit === northAxis || hit === southAxis) {
-                    tooltip.innerHTML = `<strong>Axis Pole</strong><br>Click background to toggle spin`;
-                } else if (hit.userData.active) {
+                if (hit.userData.active) {
                     tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><strong>Contributions:</strong> ${hit.userData.count}`;
                 } else {
                     tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><span style="color: #8b949e;">Before July 9</span>`;
