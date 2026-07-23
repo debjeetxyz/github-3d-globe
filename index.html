@@ -130,27 +130,42 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
 
-        // 1. Completely FIXED/STATIONARY Tilt Container for the Axis Line
-        const fixedAxisGroup = new THREE.Group();
-        fixedAxisGroup.rotation.z = THREE.MathUtils.degToRad(23.5);
-        scene.add(fixedAxisGroup);
+        // Master orbit system for dragging / rotation
+        const earthSystem = new THREE.Group();
+        scene.add(earthSystem);
 
-        // Stationary Axis Line (Never rotates with user drag or auto-spin)
-        const axisGeo = new THREE.CylinderGeometry(0.015, 0.015, 3.2, 16);
-        const axisMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.6 });
-        const fixedAxis = new THREE.Mesh(axisGeo, axisMat);
-        fixedAxisGroup.add(fixedAxis);
-
-        // 2. ROTATING Sphere Body Group (Nested inside the tilted frame, spins independently around Y-axis)
-        const globeBody = new THREE.Group();
-        fixedAxisGroup.add(globeBody);
+        // 1. Tilted Axis Group (Opposite tilt direction using -23.5 degrees)
+        const tiltedAxisGroup = new THREE.Group();
+        tiltedAxisGroup.rotation.z = THREE.MathUtils.degToRad(-23.5);
+        earthSystem.add(tiltedAxisGroup);
 
         const radius = 1.2;
+
+        // Pole caps visible ONLY outside the sphere poles (not intersecting inside)
+        const poleCapGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.4, 16);
+        const poleMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.8 });
+
+        const northAxis = new THREE.Mesh(poleCapGeo, poleMat);
+        northAxis.position.set(0, radius + 0.2, 0);
+        tiltedAxisGroup.add(northAxis);
+
+        const southAxis = new THREE.Mesh(poleCapGeo, poleMat);
+        southAxis.position.set(0, -(radius + 0.2), 0);
+        tiltedAxisGroup.add(southAxis);
+
+        // 2. Rotating Body Group (Spins locally around its tilted axis)
+        const globeBody = new THREE.Group();
+        tiltedAxisGroup.add(globeBody);
+
         const contributionColors = [0x161b22, 0x0e4429, 0x006d32, 0x26a641, 0x39d353];
         
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         const interactiveMeshes = [];
+
+        // Make poles interactive for hovering/clicking
+        interactiveMeshes.push(northAxis);
+        interactiveMeshes.push(southAxis);
 
         async function fetchGitHubData() {
             try {
@@ -196,7 +211,7 @@
                     cell.userData = { date: day.date, count: count, active: isAfterJoining, type: 'cell' };
                     
                     interactiveMeshes.push(cell);
-                    globeBody.add(cell); // Only cells spin
+                    globeBody.add(cell);
                 });
 
                 document.getElementById('status-text').innerText = `Contributions since July 9: ${totalFilteredCount}`;
@@ -250,7 +265,7 @@
             }
         });
 
-        // Rotate ONLY the sphere body when dragging (Axis remains perfectly fixed)
+        // Full 360-degree rotational freedom for the entire earth system
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
 
@@ -268,9 +283,8 @@
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
 
-            // Dragging spins the globe body around the fixed tilted axis
-            globeBody.rotation.y += deltaX * 0.005;
-            globeBody.rotation.x += deltaY * 0.005;
+            earthSystem.rotation.y += deltaX * 0.005;
+            earthSystem.rotation.x += deltaY * 0.005;
 
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
@@ -280,7 +294,7 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
-            // Auto-spin ONLY the spiral contribution body
+            // Auto-spin the sphere body smoothly around its tilted axis
             if (!isDragging && isAutoSpinning) {
                 globeBody.rotation.y += ((2 * Math.PI) / 10.0) * delta;
             }
@@ -291,7 +305,9 @@
             if (intersects.length > 0 && !modal.classList.contains('active')) {
                 const hit = intersects[0].object;
                 tooltip.style.display = 'block';
-                if (hit.userData.active) {
+                if (hit === northAxis || hit === southAxis) {
+                    tooltip.innerHTML = `<strong>Rotational Axis Pole</strong><br>Click background to toggle spin`;
+                } else if (hit.userData.active) {
                     tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><strong>Contributions:</strong> ${hit.userData.count}`;
                 } else {
                     tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><span style="color: #8b949e;">Before July 9</span>`;
