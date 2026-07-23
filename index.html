@@ -2,15 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive 3D GitHub Contribution Sphere</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cosmic 3D GitHub Contribution Sphere</title>
     <style>
         body {
             margin: 0;
-            background-color: #0d1117;
+            /* Universe background styling with deep space radial gradient and subtle star field effect */
+            background: radial-gradient(circle at center, #1b1b2f 0%, #0f0c1b 50%, #05030a 100%);
             overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             user-select: none;
+            touch-action: none; /* Prevents default mobile pinch/scroll conflicts */
+            width: 100vw;
+            height: 100vh;
         }
         #ui-overlay {
             position: absolute;
@@ -20,7 +24,7 @@
             pointer-events: none;
             z-index: 10;
         }
-        h2 { margin: 0 0 5px 0; font-size: 18px; color: #f0f6fc; }
+        h2 { margin: 0 0 5px 0; font-size: 18px; color: #f0f6fc; text-shadow: 0 0 10px rgba(88,166,255,0.4); }
         p { margin: 0 0 4px 0; font-size: 13px; color: #8b949e; }
         
         #tooltip {
@@ -46,7 +50,8 @@
             background: #161b22;
             border: 1px solid #30363d;
             border-radius: 12px;
-            width: 360px;
+            width: 85%;
+            max-width: 360px;
             max-height: 400px;
             overflow-y: auto;
             padding: 20px;
@@ -83,13 +88,15 @@
             background: none;
             border: none;
             color: #8b949e;
-            font-size: 16px;
+            font-size: 18px;
             cursor: pointer;
         }
 
         canvas {
             display: block;
             cursor: grab;
+            width: 100vw;
+            height: 100vh;
         }
         canvas:active {
             cursor: grabbing;
@@ -101,7 +108,7 @@
     <div id="ui-overlay">
         <h2>@debjeetxyz</h2>
         <p>Joining Date: <strong>July 9</strong></p>
-        <p id="live-stats">Public Repos: Loading... | Issues: Loading...</p>
+        <p id="live-stats">Public Repos: Loading... | Followers: Loading...</p>
         <p id="status-text">Fetching contributions...</p>
     </div>
 
@@ -141,15 +148,29 @@
         const mouse = new THREE.Vector2();
         const interactiveMeshes = [];
 
-        // Fetch User Profile Stats (Repos & Activity) & Contributions
+        // Add Pole-to-Pole Axis (Visible only externally from the poles, not intersecting inside the core)
+        const axisGroup = new THREE.Group();
+        const poleCapGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.4, 16);
+        const poleMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.7 });
+
+        // North Pole Extension
+        const northAxis = new THREE.Mesh(poleCapGeo, poleMat);
+        northAxis.position.set(0, radius + 0.2, 0);
+        axisGroup.add(northAxis);
+
+        // South Pole Extension
+        const southAxis = new THREE.Mesh(poleCapGeo, poleMat);
+        southAxis.position.set(0, -(radius + 0.2), 0);
+        axisGroup.add(southAxis);
+        globe.add(axisGroup);
+
+        // Fetch User Profile Stats & Contributions
         async function fetchGitHubData() {
             try {
-                // Fetch public user stats
                 const userRes = await fetch(`https://api.github.com/users/${username}`);
                 const userData = await userRes.json();
                 document.getElementById('live-stats').innerHTML = `Public Repos: <strong>${userData.public_repos || 0}</strong> | Followers: <strong>${userData.followers || 0}</strong>`;
 
-                // Fetch contributions
                 const response = await fetch(`https://github-contributions-api.jogruber.de/v4/${username}?y=last`);
                 const data = await response.json();
                 
@@ -185,12 +206,7 @@
                     );
 
                     cell.lookAt(0, 0, 0);
-                    
-                    cell.userData = { 
-                        date: day.date, 
-                        count: count, 
-                        active: isAfterJoining 
-                    };
+                    cell.userData = { date: day.date, count: count, active: isAfterJoining };
                     
                     interactiveMeshes.push(cell);
                     globe.add(cell);
@@ -212,24 +228,28 @@
         const modalCommitList = document.getElementById('modal-commit-list');
         document.getElementById('close-modal').addEventListener('click', () => modal.classList.remove('active'));
 
-        window.addEventListener('mousemove', (e) => {
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        // Universal Coordinate Setter for Mouse & Touch
+        function updateMouseCoordinates(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
 
-            tooltip.style.left = `${e.clientX + 15}px`;
-            tooltip.style.top = `${e.clientY + 15}px`;
+            tooltip.style.left = `${clientX + 15}px`;
+            tooltip.style.top = `${clientY + 15}px`;
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            updateMouseCoordinates(e.clientX, e.clientY);
         });
 
-        // Click detection: Background vs Sphere Cell
-        window.addEventListener('click', (e) => {
-            // Ignore UI clicks
+        // Click detection: Background vs Sphere Cell (Supports Desktop & Mobile Taps)
+        window.addEventListener('pointerdown', (e) => {
             if (e.target.closest('#ui-overlay') || e.target.closest('#commit-modal')) return;
+            updateMouseCoordinates(e.clientX, e.clientY);
 
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(interactiveMeshes);
 
             if (intersects.length > 0) {
-                // Clicked on a contribution block -> Open commit template modal
                 const hit = intersects[0].object;
                 if (hit.userData.active && hit.userData.count > 0) {
                     modalDateTitle.innerText = `Commits on ${hit.userData.date} (${hit.userData.count})`;
@@ -242,22 +262,24 @@
                     modal.classList.add('active');
                 }
             } else {
-                // Clicked on background -> Toggle spin state
                 isAutoSpinning = !isAutoSpinning;
             }
         });
 
-        // Mouse Drag Logic
+        // Desktop & Mobile Drag Handling
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
 
-        window.addEventListener('mousedown', (e) => {
+        window.addEventListener('pointerdown', (e) => {
             if (e.target.closest('#commit-modal')) return;
             isDragging = true;
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
-        window.addEventListener('mouseup', () => { isDragging = false; });
-        window.addEventListener('mousemove', (e) => {
+
+        window.addEventListener('pointerup', () => { isDragging = false; });
+        window.addEventListener('pointercancel', () => { isDragging = false; });
+
+        window.addEventListener('pointermove', (e) => {
             if (!isDragging) return;
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
@@ -297,7 +319,7 @@
         }
         animate();
 
-        // Window Resizing
+        // Responsive Window Resizing
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
