@@ -49,8 +49,8 @@
             border: 1px solid #30363d;
             border-radius: 12px;
             width: 85%;
-            max-width: 360px;
-            max-height: 400px;
+            max-width: 380px;
+            max-height: 420px;
             overflow-y: auto;
             padding: 20px;
             color: #c9d1d9;
@@ -111,7 +111,7 @@
     <div id="commit-modal">
         <button id="close-modal">&times;</button>
         <h3 id="modal-date-title">Commits on Date</h3>
-        <div id="modal-commit-list"></div>
+        <div id="modal-commit-list">Loading live activity...</div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -130,18 +130,14 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
 
-        // Master orbit system for dragging / rotation
         const earthSystem = new THREE.Group();
         scene.add(earthSystem);
 
-        // 1. Tilted Axis Group (Opposite tilt direction using -23.5 degrees)
         const tiltedAxisGroup = new THREE.Group();
         tiltedAxisGroup.rotation.z = THREE.MathUtils.degToRad(-23.5);
         earthSystem.add(tiltedAxisGroup);
 
         const radius = 1.2;
-
-        // Pole caps visible ONLY outside the sphere poles (not intersecting inside)
         const poleCapGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.4, 16);
         const poleMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.8 });
 
@@ -153,7 +149,6 @@
         southAxis.position.set(0, -(radius + 0.2), 0);
         tiltedAxisGroup.add(southAxis);
 
-        // 2. Rotating Body Group (Spins locally around its tilted axis)
         const globeBody = new THREE.Group();
         tiltedAxisGroup.add(globeBody);
 
@@ -163,9 +158,11 @@
         const mouse = new THREE.Vector2();
         const interactiveMeshes = [];
 
-        // Make poles interactive for hovering/clicking
         interactiveMeshes.push(northAxis);
         interactiveMeshes.push(southAxis);
+
+        // Store fetched raw contributions data globally for event matching
+        let globalContributions = [];
 
         async function fetchGitHubData() {
             try {
@@ -175,10 +172,11 @@
 
                 const response = await fetch(`https://github-contributions-api.jogruber.de/v4/${username}?y=last`);
                 const data = await response.json();
+                globalContributions = data.contributions;
                 
                 let totalFilteredCount = 0;
 
-                data.contributions.forEach((day, index) => {
+                globalContributions.forEach((day, index) => {
                     const dayDate = new Date(day.date);
                     const isAfterJoining = dayDate >= joiningDate;
 
@@ -241,6 +239,60 @@
             updateMouseCoordinates(e.clientX, e.clientY);
         });
 
+        // Fetch live events for a specific date when clicked
+        async function fetchLiveDayActivity(targetDateStr, totalCount) {
+            modalDateTitle.innerText = `Activity on ${targetDateStr}`;
+            modalCommitList.innerHTML = `<p style="color: #8b949e;">Fetching live commits/repos for this date...</p>`;
+            modal.classList.add('active');
+
+            try {
+                // Fetch public events from GitHub API
+                const res = await fetch(`https://api.github.com/users/${username}/events/public`);
+                const events = await res.json();
+
+                // Filter events that happened on the exact target date string (YYYY-MM-DD)
+                const dayEvents = events.filter(ev => ev.created_at.startsWith(targetDateStr));
+
+                if (dayEvents.length > 0) {
+                    let htmlContent = '';
+                    // Group by repository
+                    const reposMap = {};
+                    dayEvents.forEach(ev => {
+                        const repoName = ev.repo.name; // format: owner/repo
+                        if (!reposMap[repoName]) {
+                            reposMap[repoName] = { type: ev.type, url: `https://github.com/${repoName}`, count: 0 };
+                        }
+                        reposMap[repoName].count++;
+                    });
+
+                    for (const [repoName, info] of Object.entries(reposMap)) {
+                        htmlContent += `
+                            <div class="commit-item" onclick="window.open('${info.url}', '_blank')">
+                                <a>📦 ${repoName}</a>
+                                <p>Activity Type: ${info.type} (${info.count} event${info.count > 1 ? 's' : ''})</p>
+                            </div>
+                        `;
+                    }
+                    modalCommitList.innerHTML = htmlContent;
+                } else {
+                    // Fallback if public events history window has expired (GitHub public events API only keeps recent ~90 events)
+                    modalCommitList.innerHTML = `
+                        <div class="commit-item" onclick="window.open('https://github.com/${username}?tab=repositories', '_blank')">
+                            <a>View Repositories</a>
+                            <p>${totalCount} contribution(s) recorded on this date. (Detailed event history beyond recent API cache requires profile logs).</p>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                modalCommitList.innerHTML = `
+                    <div class="commit-item" onclick="window.open('https://github.com/${username}?tab=repositories', '_blank')">
+                        <a>Open GitHub Profile</a>
+                        <p>${totalCount} contribution(s) recorded on ${targetDateStr}. Click to view online.</p>
+                    </div>
+                `;
+            }
+        }
+
         window.addEventListener('pointerdown', (e) => {
             if (e.target.closest('#ui-overlay') || e.target.closest('#commit-modal')) return;
             updateMouseCoordinates(e.clientX, e.clientY);
@@ -251,21 +303,13 @@
             if (intersects.length > 0) {
                 const hit = intersects[0].object;
                 if (hit.userData.type === 'cell' && hit.userData.active && hit.userData.count > 0) {
-                    modalDateTitle.innerText = `Commits on ${hit.userData.date} (${hit.userData.count})`;
-                    modalCommitList.innerHTML = `
-                        <div class="commit-item" onclick="window.open('https://github.com/${username}?tab=repositories', '_blank')">
-                            <a>View Repository Activity</a>
-                            <p>${hit.userData.count} contributions recorded on this date.</p>
-                        </div>
-                    `;
-                    modal.classList.add('active');
+                    fetchLiveDayActivity(hit.userData.date, hit.userData.count);
                 }
             } else {
                 isAutoSpinning = !isAutoSpinning;
             }
         });
 
-        // Full 360-degree rotational freedom for the entire earth system
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
 
@@ -294,7 +338,6 @@
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
-            // Auto-spin the sphere body smoothly around its tilted axis
             if (!isDragging && isAutoSpinning) {
                 globeBody.rotation.y += ((2 * Math.PI) / 10.0) * delta;
             }
