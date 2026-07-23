@@ -7,12 +7,11 @@
     <style>
         body {
             margin: 0;
-            /* Universe background styling with deep space radial gradient and subtle star field effect */
             background: radial-gradient(circle at center, #1b1b2f 0%, #0f0c1b 50%, #05030a 100%);
             overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             user-select: none;
-            touch-action: none; /* Prevents default mobile pinch/scroll conflicts */
+            touch-action: none;
             width: 100vw;
             height: 100vh;
         }
@@ -41,7 +40,6 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
 
-        /* Modal Template for Commits */
         #commit-modal {
             position: absolute;
             top: 50%;
@@ -77,9 +75,7 @@
             cursor: pointer;
             transition: border-color 0.2s;
         }
-        .commit-item:hover {
-            border-color: #39d353;
-        }
+        .commit-item:hover { border-color: #39d353; }
         .commit-item a { color: #58a6ff; text-decoration: none; font-size: 13px; font-weight: 600; display: block; margin-bottom: 2px;}
         .commit-item p { font-size: 12px; color: #8b949e; margin: 0; }
         
@@ -98,9 +94,7 @@
             width: 100vw;
             height: 100vh;
         }
-        canvas:active {
-            cursor: grabbing;
-        }
+        canvas:active { cursor: grabbing; }
     </style>
 </head>
 <body>
@@ -114,7 +108,6 @@
 
     <div id="tooltip"></div>
 
-    <!-- Interactive Commit Modal Template -->
     <div id="commit-modal">
         <button id="close-modal">&times;</button>
         <h3 id="modal-date-title">Commits on Date</h3>
@@ -128,7 +121,6 @@
         
         let isAutoSpinning = true;
 
-        // Scene, Camera, Renderer Setup
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 3.5;
@@ -141,6 +133,9 @@
         const globe = new THREE.Group();
         scene.add(globe);
 
+        // Apply Earth's axial tilt (approximately 23.5 degrees)
+        globe.rotation.z = THREE.MathUtils.degToRad(23.5);
+
         const radius = 1.2;
         const contributionColors = [0x161b22, 0x0e4429, 0x006d32, 0x26a641, 0x39d353];
         
@@ -148,23 +143,23 @@
         const mouse = new THREE.Vector2();
         const interactiveMeshes = [];
 
-        // Add Pole-to-Pole Axis (Visible only externally from the poles, not intersecting inside the core)
+        // Pole-to-Pole Axis (Clickable for interaction and axis rotation)
         const axisGroup = new THREE.Group();
-        const poleCapGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.4, 16);
-        const poleMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.7 });
+        const poleCapGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.5, 16);
+        const poleMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.8 });
 
-        // North Pole Extension
         const northAxis = new THREE.Mesh(poleCapGeo, poleMat);
-        northAxis.position.set(0, radius + 0.2, 0);
+        northAxis.position.set(0, radius + 0.25, 0);
         axisGroup.add(northAxis);
+        interactiveMeshes.push(northAxis); // Make axis clickable/hoverable
 
-        // South Pole Extension
         const southAxis = new THREE.Mesh(poleCapGeo, poleMat);
-        southAxis.position.set(0, -(radius + 0.2), 0);
+        southAxis.position.set(0, -(radius + 0.25), 0);
         axisGroup.add(southAxis);
+        interactiveMeshes.push(southAxis); // Make axis clickable/hoverable
+
         globe.add(axisGroup);
 
-        // Fetch User Profile Stats & Contributions
         async function fetchGitHubData() {
             try {
                 const userRes = await fetch(`https://api.github.com/users/${username}`);
@@ -206,7 +201,7 @@
                     );
 
                     cell.lookAt(0, 0, 0);
-                    cell.userData = { date: day.date, count: count, active: isAfterJoining };
+                    cell.userData = { date: day.date, count: count, active: isAfterJoining, type: 'cell' };
                     
                     interactiveMeshes.push(cell);
                     globe.add(cell);
@@ -221,14 +216,12 @@
 
         fetchGitHubData();
 
-        // UI Tooltip & Modal Interactivity
         const tooltip = document.getElementById('tooltip');
         const modal = document.getElementById('commit-modal');
         const modalDateTitle = document.getElementById('modal-date-title');
         const modalCommitList = document.getElementById('modal-commit-list');
         document.getElementById('close-modal').addEventListener('click', () => modal.classList.remove('active'));
 
-        // Universal Coordinate Setter for Mouse & Touch
         function updateMouseCoordinates(clientX, clientY) {
             mouse.x = (clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(clientY / window.innerHeight) * 2 + 1;
@@ -241,7 +234,6 @@
             updateMouseCoordinates(e.clientX, e.clientY);
         });
 
-        // Click detection: Background vs Sphere Cell (Supports Desktop & Mobile Taps)
         window.addEventListener('pointerdown', (e) => {
             if (e.target.closest('#ui-overlay') || e.target.closest('#commit-modal')) return;
             updateMouseCoordinates(e.clientX, e.clientY);
@@ -251,7 +243,7 @@
 
             if (intersects.length > 0) {
                 const hit = intersects[0].object;
-                if (hit.userData.active && hit.userData.count > 0) {
+                if (hit.userData.type === 'cell' && hit.userData.active && hit.userData.count > 0) {
                     modalDateTitle.innerText = `Commits on ${hit.userData.date} (${hit.userData.count})`;
                     modalCommitList.innerHTML = `
                         <div class="commit-item" onclick="window.open('https://github.com/${username}?tab=repositories', '_blank')">
@@ -266,7 +258,7 @@
             }
         });
 
-        // Desktop & Mobile Drag Handling
+        // 360 Full 2D Orbit Controls (Fixed full freedom rotation for both X and Y axes)
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
 
@@ -284,13 +276,13 @@
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
 
+            // Full 360-degree rotation freedom on both directions
             globe.rotation.y += deltaX * 0.005;
             globe.rotation.x += deltaY * 0.005;
 
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
 
-        // Animation Loop & Hover Detection
         const clock = new THREE.Clock();
         function animate() {
             requestAnimationFrame(animate);
@@ -306,7 +298,9 @@
             if (intersects.length > 0 && !modal.classList.contains('active')) {
                 const hit = intersects[0].object;
                 tooltip.style.display = 'block';
-                if (hit.userData.active) {
+                if (hit === northAxis || hit === southAxis) {
+                    tooltip.innerHTML = `<strong>Axis Pole</strong><br>Click background to toggle spin`;
+                } else if (hit.userData.active) {
                     tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><strong>Contributions:</strong> ${hit.userData.count}`;
                 } else {
                     tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><span style="color: #8b949e;">Before July 9</span>`;
@@ -319,7 +313,6 @@
         }
         animate();
 
-        // Responsive Window Resizing
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
