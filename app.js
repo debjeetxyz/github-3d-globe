@@ -34,7 +34,7 @@ tiltedAxisGroup.add(southAxis);
 const globeBody = new THREE.Group();
 tiltedAxisGroup.add(globeBody);
 
-const contributionColors = [0x161b22, 0x0e4429, 0x006d32, 0x26a641, 0x39d353];
+const contributionColors = [0x0b1320, 0x0e4429, 0x006d32, 0x26a641, 0x39d353];
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
