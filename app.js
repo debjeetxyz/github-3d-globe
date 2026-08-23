@@ -96,7 +96,7 @@ async function fetchGitHubData() {
             const theta = (weekIndex / 53) * Math.PI * 2;
             const phi = ((dayIndex + 1) / 8) * Math.PI;
 
-            const boxGeo = createRoundedBoxGeometry(0.06, 0.06, 0.02, 0.008);
+            const boxGeo = createRoundedBoxGeometry(0.05, 0.05, 0.02, 0.01);
             const boxMat = new THREE.MeshBasicMaterial({ color: color });
             const cell = new THREE.Mesh(boxGeo, boxMat);
 
