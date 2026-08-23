@@ -53,7 +53,31 @@ async function fetchGitHubData() {
         const data = await response.json();
         
         let totalFilteredCount = 0;
+        function createRoundedBoxGeometry(width, height, depth, radius, smoothness = 3) {
+            const shape = new THREE.Shape();
+            const x = -width / 2, y = -height / 2;
 
+            shape.moveTo(x, y + radius);
+            shape.lineTo(x, y + height - radius);
+            shape.quadraticCurveTo(x, y + height, x + radius, y + height);
+            shape.lineTo(x + width - radius, y + height);
+            shape.quadraticCurveTo(x + width, y + height, x + width, y + height - radius);
+            shape.lineTo(x + width, y + radius);
+            shape.quadraticCurveTo(x + width, y, x + width - radius, y);
+            shape.lineTo(x + radius, y);
+            shape.quadraticCurveTo(x, y, x, y + radius);
+
+            const geometry = new THREE.ExtrudeGeometry(shape, {
+                depth: depth,
+                bevelEnabled: true,
+                bevelThickness: radius * 0.4,
+                bevelSize: radius * 0.4,
+                bevelSegments: smoothness,
+                curveSegments: smoothness
+            });
+            geometry.center();
+            return geometry;
+        }
         data.contributions.forEach((day, index) => {
             const dayDate = new Date(day.date);
             const isAfterJoining = dayDate >= joiningDate;
@@ -72,7 +96,7 @@ async function fetchGitHubData() {
             const theta = (weekIndex / 53) * Math.PI * 2;
             const phi = ((dayIndex + 1) / 8) * Math.PI;
 
-            const boxGeo = new THREE.BoxGeometry(0.08, 0.08, 0.02);
+            const boxGeo = createRoundedBoxGeometry(0.06, 0.06, 0.02, 0.008);
             const boxMat = new THREE.MeshBasicMaterial({ color: color });
             const cell = new THREE.Mesh(boxGeo, boxMat);
 
