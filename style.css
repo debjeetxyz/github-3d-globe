@@ -4,7 +4,7 @@ body {
     background-color: #1e0465;
     background-image: 
         /* Central light-blue radiant glow */
-        radial-gradient(circle at center, rgba(88, 166, 255, 0.15) 0%, rgba(13, 17, 23, 0.8) 60%, #03050a 100%),
+        radial-gradient(circle at center, rgba(255, 0, 68, 0.15) 0%, rgba(13, 17, 23, 0.8) 60%, #03050a 100%),
         /* Primary radiant gridlines */
         linear-gradient(rgba(56, 139, 253, 0.15) 1px, transparent 1px),
         linear-gradient(90deg, rgba(56, 139, 253, 0.15) 1px, transparent 1px),
