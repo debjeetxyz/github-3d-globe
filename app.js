@@ -34,101 +34,14 @@ tiltedAxisGroup.add(southAxis);
 const globeBody = new THREE.Group();
 tiltedAxisGroup.add(globeBody);
 
-// ---- Moon-ball crater texture setup ----
-const BASE_COLOR = 0x0b1320; // smooth "no contribution" surface
 const contributionColors = [0x0b1320, 0x0e4429, 0x006d32, 0x26a641, 0x39d353];
-
-const TEX_W = 2048;
-const TEX_H = 1024;
-const textureCanvas = document.createElement('canvas');
-textureCanvas.width = TEX_W;
-textureCanvas.height = TEX_H;
-const tctx = textureCanvas.getContext('2d');
-
-function toRgb(hex) {
-    return { r: (hex >> 16) & 0xff, g: (hex >> 8) & 0xff, b: hex & 0xff };
-}
-function shade(hex, percent) {
-    const { r, g, b } = toRgb(hex);
-    const nr = Math.min(255, Math.max(0, Math.round(r + (r * percent) / 100)));
-    const ng = Math.min(255, Math.max(0, Math.round(g + (g * percent) / 100)));
-    const nb = Math.min(255, Math.max(0, Math.round(b + (b * percent) / 100)));
-    return `rgb(${nr},${ng},${nb})`;
-}
-function rgbStr(hex) {
-    const { r, g, b } = toRgb(hex);
-    return `rgb(${r},${g},${b})`;
-}
-
-function paintBaseSurface() {
-    // solid base + very subtle vertical vignette so poles read slightly darker (sphere-like shading)
-    tctx.fillStyle = rgbStr(BASE_COLOR);
-    tctx.fillRect(0, 0, TEX_W, TEX_H);
-    const vign = tctx.createLinearGradient(0, 0, 0, TEX_H);
-    vign.addColorStop(0, 'rgba(0,0,0,0.35)');
-    vign.addColorStop(0.5, 'rgba(0,0,0,0)');
-    vign.addColorStop(1, 'rgba(0,0,0,0.35)');
-    tctx.fillStyle = vign;
-    tctx.fillRect(0, 0, TEX_W, TEX_H);
-}
-
-function drawCraterAt(x, y, r, colorHex, glow) {
-    const grad = tctx.createRadialGradient(x - r * 0.25, y - r * 0.25, r * 0.1, x, y, r);
-    grad.addColorStop(0, shade(colorHex, glow ? 55 : 25));
-    grad.addColorStop(0.55, rgbStr(colorHex));
-    grad.addColorStop(1, shade(colorHex, -55));
-    tctx.beginPath();
-    tctx.fillStyle = grad;
-    tctx.arc(x, y, r, 0, Math.PI * 2);
-    tctx.fill();
-
-    // dark inner rim to sell the "hole" depth
-    tctx.beginPath();
-    tctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    tctx.lineWidth = Math.max(1, r * 0.12);
-    tctx.arc(x, y, r * 0.92, 0, Math.PI * 2);
-    tctx.stroke();
-
-    if (glow) {
-        tctx.save();
-        tctx.shadowColor = rgbStr(colorHex);
-        tctx.shadowBlur = r * 3.2;
-        tctx.beginPath();
-        tctx.fillStyle = shade(colorHex, 70);
-        tctx.arc(x, y, r * 0.5, 0, Math.PI * 2);
-        tctx.fill();
-        tctx.restore();
-    }
-}
-
-function drawCrater(x, y, r, colorHex, glow) {
-    drawCraterAt(x, y, r, colorHex, glow);
-    // handle horizontal wrap so craters near the seam aren't clipped
-    if (x - r < 0) drawCraterAt(x + TEX_W, y, r, colorHex, glow);
-    if (x + r > TEX_W) drawCraterAt(x - TEX_W, y, r, colorHex, glow);
-}
-
-const globeTexture = new THREE.CanvasTexture(textureCanvas);
-globeTexture.wrapS = THREE.RepeatWrapping;
-globeTexture.wrapT = THREE.ClampToEdgeWrapping;
-
-const globeGeo = new THREE.SphereGeometry(radius, 96, 96);
-const globeMat = new THREE.MeshBasicMaterial({ map: globeTexture });
-const globeMesh = new THREE.Mesh(globeGeo, globeMat);
-globeBody.add(globeMesh);
-
-paintBaseSurface();
-globeTexture.needsUpdate = true;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-const interactiveMeshes = [northAxis, southAxis, globeMesh];
+const interactiveMeshes = [];
 
-let cellsData = []; // flat array indexed like the original `index` (weekIndex*7 + dayIndex)
-let hoveredIndex = -1;
-
-const CELL_W = TEX_W / 53;
-const CELL_H = TEX_H / 8;
+interactiveMeshes.push(northAxis);
+interactiveMeshes.push(southAxis);
 
 async function fetchGitHubData() {
     try {
@@ -138,11 +51,8 @@ async function fetchGitHubData() {
 
         const response = await fetch(`https://github-contributions-api.jogruber.de/v4/${username}?y=last`);
         const data = await response.json();
-
+        
         let totalFilteredCount = 0;
-        cellsData = [];
-
-        paintBaseSurface();
 
         data.contributions.forEach((day, index) => {
             const dayDate = new Date(day.date);
@@ -150,26 +60,36 @@ async function fetchGitHubData() {
 
             const level = isAfterJoining ? (day.level || 0) : 0;
             const count = isAfterJoining ? (day.count || 0) : 0;
-
+            
             if (isAfterJoining) totalFilteredCount += count;
 
+            const color = contributionColors[level];
             const weekIndex = Math.floor(index / 7);
             const dayIndex = index % 7;
 
-            cellsData[index] = { date: day.date, count, level, active: isAfterJoining, weekIndex, dayIndex };
-
             if (weekIndex >= 53) return;
 
-            const x = weekIndex * CELL_W + CELL_W / 2;
-            const y = (dayIndex + 1) * CELL_H;
+            const theta = (weekIndex / 53) * Math.PI * 2;
+            const phi = ((dayIndex + 1) / 8) * Math.PI;
 
-            if (level > 0) {
-                const craterRadius = (Math.min(CELL_W, CELL_H) * 0.38) * (0.75 + level * 0.12);
-                drawCrater(x, y, craterRadius, contributionColors[level], false);
-            }
+            const boxGeo = new THREE.BoxGeometry(0.04, 0.04, 0.02);
+            const boxMat = new THREE.MeshBasicMaterial({ color: color });
+            const cell = new THREE.Mesh(boxGeo, boxMat);
+
+            const currentRadius = radius + (level * 0.005);
+            cell.position.set(
+                currentRadius * Math.sin(phi) * Math.cos(theta),
+                currentRadius * Math.cos(phi),
+                currentRadius * Math.sin(phi) * Math.sin(theta)
+            );
+
+            cell.lookAt(0, 0, 0);
+            cell.userData = { date: day.date, count: count, active: isAfterJoining, type: 'cell' };
+            
+            interactiveMeshes.push(cell);
+            globeBody.add(cell);
         });
 
-        globeTexture.needsUpdate = true;
         document.getElementById('status-text').innerText = `Contributions since July 9: ${totalFilteredCount}`;
     } catch (error) {
         console.error("API error:", error);
@@ -178,30 +98,6 @@ async function fetchGitHubData() {
 }
 
 fetchGitHubData();
-
-// ---- Redraw helper for hover highlight ----
-function redrawCell(index, glow) {
-    const cell = cellsData[index];
-    if (!cell || cell.weekIndex >= 53) return;
-    const x = cell.weekIndex * CELL_W + CELL_W / 2;
-    const y = (cell.dayIndex + 1) * CELL_H;
-
-    if (cell.level > 0) {
-        const baseRadius = (Math.min(CELL_W, CELL_H) * 0.38) * (0.75 + cell.level * 0.12);
-        const r = glow ? baseRadius * 1.35 : baseRadius;
-        // clear a slightly larger patch back to base before redrawing (removes old glow bleed)
-        const clearR = baseRadius * 1.7;
-        tctx.save();
-        tctx.beginPath();
-        tctx.arc(x, y, clearR, 0, Math.PI * 2);
-        tctx.clip();
-        tctx.fillStyle = rgbStr(BASE_COLOR);
-        tctx.fillRect(x - clearR, y - clearR, clearR * 2, clearR * 2);
-        tctx.restore();
-        drawCrater(x, y, r, contributionColors[cell.level], glow);
-    }
-    globeTexture.needsUpdate = true;
-}
 
 const tooltip = document.getElementById('tooltip');
 const modal = document.getElementById('commit-modal');
@@ -220,20 +116,6 @@ function updateMouseCoordinates(clientX, clientY) {
 window.addEventListener('mousemove', (e) => {
     updateMouseCoordinates(e.clientX, e.clientY);
 });
-
-// Converts a local-space point on the globe into a week/day cell index
-function pointToCellIndex(localPoint) {
-    const r = localPoint.length();
-    const phi = Math.acos(THREE.MathUtils.clamp(localPoint.y / r, -1, 1)); // 0..PI
-    let theta = Math.atan2(localPoint.z, localPoint.x); // -PI..PI
-    if (theta < 0) theta += Math.PI * 2;
-
-    let weekIndex = Math.round((theta / (Math.PI * 2)) * 53) % 53;
-    let dayIndex = Math.round((phi / Math.PI) * 8) - 1;
-
-    if (dayIndex < 0 || dayIndex > 6) return -1;
-    return weekIndex * 7 + dayIndex;
-}
 
 // Calls your serverless backend route securely for exact day repo/commit activity
 async function openLiveDayModal(targetDateStr, totalCount) {
@@ -283,17 +165,10 @@ window.addEventListener('pointerdown', (e) => {
     const intersects = raycaster.intersectObjects(interactiveMeshes);
 
     if (intersects.length > 0) {
-        const hit = intersects[0];
-        if (hit.object === globeMesh) {
-            const localPoint = globeMesh.worldToLocal(hit.point.clone());
-            const cellIndex = pointToCellIndex(localPoint);
-            const cell = cellsData[cellIndex];
-            if (cell && cell.active && cell.count > 0) {
-                openLiveDayModal(cell.date, cell.count);
-                return;
-            }
+        const hit = intersects[0].object;
+        if (hit.userData.type === 'cell' && hit.userData.active && hit.userData.count > 0) {
+            openLiveDayModal(hit.userData.date, hit.userData.count);
         }
-        // hit a pole, or an inactive/empty patch of the ball - no toggle
     } else {
         isAutoSpinning = !isAutoSpinning;
     }
@@ -334,43 +209,15 @@ function animate() {
     raycaster.setFromCamera(mouse, camera);
     const intersects = raycaster.intersectObjects(interactiveMeshes);
 
-    let newHoveredIndex = -1;
-    let hoveredCell = null;
-    let onPole = null;
-
     if (intersects.length > 0 && !modal.classList.contains('active')) {
-        const hit = intersects[0];
-        if (hit.object === northAxis || hit.object === southAxis) {
-            onPole = hit.object;
-        } else if (hit.object === globeMesh) {
-            const localPoint = globeMesh.worldToLocal(hit.point.clone());
-            const cellIndex = pointToCellIndex(localPoint);
-            const cell = cellsData[cellIndex];
-            if (cell && cell.level > 0) {
-                newHoveredIndex = cellIndex;
-                hoveredCell = cell;
-            } else if (cell) {
-                hoveredCell = cell;
-            }
-        }
-    }
-
-    // Only touch the canvas texture when the hovered crater actually changes
-    if (newHoveredIndex !== hoveredIndex) {
-        if (hoveredIndex !== -1) redrawCell(hoveredIndex, false);
-        if (newHoveredIndex !== -1) redrawCell(newHoveredIndex, true);
-        hoveredIndex = newHoveredIndex;
-    }
-
-    if (onPole) {
+        const hit = intersects[0].object;
         tooltip.style.display = 'block';
-        tooltip.innerHTML = `<strong>Rotational Axis Pole</strong><br>Click background to toggle spin`;
-    } else if (hoveredCell) {
-        tooltip.style.display = 'block';
-        if (hoveredCell.active) {
-            tooltip.innerHTML = `<strong>Date:</strong> ${hoveredCell.date}<br><strong>Contributions:</strong> ${hoveredCell.count}`;
+        if (hit === northAxis || hit === southAxis) {
+            tooltip.innerHTML = `<strong>Rotational Axis Pole</strong><br>Click background to toggle spin`;
+        } else if (hit.userData.active) {
+            tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><strong>Contributions:</strong> ${hit.userData.count}`;
         } else {
-            tooltip.innerHTML = `<strong>Date:</strong> ${hoveredCell.date}<br><span style="color: #8b949e;">Before July 9</span>`;
+            tooltip.innerHTML = `<strong>Date:</strong> ${hit.userData.date}<br><span style="color: #8b949e;">Before July 9</span>`;
         }
     } else {
         tooltip.style.display = 'none';
